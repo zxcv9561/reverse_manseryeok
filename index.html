@@ -1369,8 +1369,8 @@ function renderTable(body) {
     { key:'oh_to', label:'토' },
     { key:'oh_geum', label:'금' },
     { key:'oh_su', label:'수' },
-    { key:'sinsal_total', label:'신살' },
-    { key:'sinsal_list', label:'신살 목록' },
+    { key:'sinsal_total', label:'신살 합계' },
+    { key:'sinsal_list', label:'신살 종류·목록' },
   ];
 
   const pager = renderPager(numPages, state.page);
@@ -1394,7 +1394,10 @@ function renderTable(body) {
             <td>${r.oheng[3]}</td>
             <td>${r.oheng[4]}</td>
             <td><strong>${r.sinsalTotal}</strong></td>
-            <td style="white-space: normal; max-width: 360px; font-size: 11px;">${sinsalSummaryHTML(r.sinsal)}</td>
+            <td style="white-space: normal; max-width: 360px; font-size: 11px;">
+              <span style="display:inline-block; min-width: 28px; padding: 1px 6px; margin-right: 4px; border-radius: 999px; background: #fef3c7; color: #92400e; font-weight: 700; font-size: 10px;">${Object.keys(r.sinsal || {}).length}종</span>
+              ${sinsalSummaryHTML(r.sinsal)}
+            </td>
           </tr>
         `).join('')}</tbody>
       </table>
@@ -1421,7 +1424,7 @@ function tableVal(r, k) {
     case 'oh_geum': return r.oheng[3];
     case 'oh_su': return r.oheng[4];
     case 'sinsal_total': return r.sinsalTotal;
-    case 'sinsal_list': return Object.keys(r.sinsal || {}).join(',');
+    case 'sinsal_list': return Object.keys(r.sinsal || {}).length;
     default: return r[k];
   }
 }
