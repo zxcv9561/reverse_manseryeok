@@ -208,6 +208,13 @@
     gap: 5px;
     align-items: center;
   }
+  /* 신살 그리드는 라벨이 더 길어 별도 폭 */
+  #sinsal-grid .count-row {
+    grid-template-columns: 58px 1fr 42px;
+  }
+  #sinsal-total-grid .count-row {
+    grid-template-columns: 50px 1fr 56px;
+  }
   .count-label {
     font-size: 12px; font-weight: 600;
     text-align: center;
@@ -540,6 +547,19 @@
       </div>
     </div>
 
+    <!-- Sinsal filters -->
+    <div class="group">
+      <div class="group-title toggle-header collapsed" data-target="sinsal-block">
+        <span>신살 조건 (선택)</span>
+        <button class="reset" data-reset="sinsal" style="margin-right: 18px;">초기화</button>
+      </div>
+      <div id="sinsal-block" class="collapsible collapsed">
+        <div class="count-grid" id="sinsal-total-grid"></div>
+        <div class="hint" style="font-size: 11px; margin: 6px 0 8px;">전체 신살 개수 조건 (사주 8글자에서 모든 신살 발견 개수의 합).</div>
+        <div class="count-grid two-col" id="sinsal-grid"></div>
+      </div>
+    </div>
+
     <button class="btn-primary" id="btn-search">조건에 맞는 일시 찾기</button>
     <div class="progress" id="progress"><div class="progress-bar" id="progress-bar"></div></div>
   </aside>
@@ -687,6 +707,220 @@ function computeCounts(p) {
 }
 
 /* ============================================================
+   SINSAL (신살) computation
+   ============================================================ */
+const SINSAL_LIST = [
+  "천을귀인","천덕귀인","월덕귀인","태극귀인","문창귀인","문곡귀인",
+  "학당귀인","관귀학관","천주귀인","천문성","천의성","황은대사","천사성",
+  "금여성","교록","협록","암록","정록","역마살","홍염살","도화살",
+  "화개살","과숙살","고신살","현침살","귀문관살","괴강살","양인살","백호대살"
+];
+const POS_LABEL = ['년','월','일','시'];
+
+/* 일간 기준 매핑 */
+const CHEONEUL = {
+  '甲':['丑','未'],'戊':['丑','未'],'庚':['丑','未'],
+  '乙':['子','申'],'己':['子','申'],
+  '丙':['亥','酉'],'丁':['亥','酉'],
+  '壬':['巳','卯'],'癸':['巳','卯'],
+  '辛':['寅','午']
+};
+const CHEONDEOK = {
+  '子':'巳','丑':'庚','寅':'丁','卯':'申','辰':'壬','巳':'辛',
+  '午':'亥','未':'甲','申':'癸','酉':'寅','戌':'丙','亥':'乙'
+};
+const WOLDEOK = {
+  '寅':'丙','午':'丙','戌':'丙',
+  '申':'壬','子':'壬','辰':'壬',
+  '巳':'庚','酉':'庚','丑':'庚',
+  '亥':'甲','卯':'甲','未':'甲'
+};
+const TAEGEUK = {
+  '甲':['子','午'],'乙':['子','午'],
+  '丙':['卯','酉'],'丁':['卯','酉'],
+  '戊':['辰','戌','丑','未'],'己':['辰','戌','丑','未'],
+  '庚':['寅','亥'],'辛':['寅','亥'],
+  '壬':['巳','申'],'癸':['巳','申']
+};
+const MUNCHANG = { '甲':'巳','乙':'午','丙':'申','丁':'酉','戊':'申','己':'酉','庚':'亥','辛':'子','壬':'寅','癸':'卯' };
+const MUNGOK   = { '甲':'亥','乙':'子','丙':'寅','丁':'卯','戊':'寅','己':'卯','庚':'巳','辛':'午','壬':'申','癸':'酉' };
+const HAKDANG  = { '甲':'亥','乙':'午','丙':'寅','丁':'酉','戊':'寅','己':'酉','庚':'巳','辛':'子','壬':'申','癸':'卯' };
+const GWANGWI  = { '甲':'巳','乙':'巳','丙':'申','丁':'申','戊':'亥','己':'亥','庚':'寅','辛':'寅','壬':'申','癸':'申' };
+const CHEONJU  = { '甲':'巳','乙':'午','丙':'巳','丁':'午','戊':'申','己':'酉','庚':'亥','辛':'子','壬':'寅','癸':'卯' };
+const GUMYEO   = { '甲':'辰','乙':'巳','丙':'未','丁':'申','戊':'未','己':'申','庚':'戌','辛':'亥','壬':'丑','癸':'寅' };
+const ROK      = { '甲':'寅','乙':'卯','丙':'巳','丁':'午','戊':'巳','己':'午','庚':'申','辛':'酉','壬':'亥','癸':'子' };
+const AMROK    = { '甲':'亥','乙':'戌','丙':'申','丁':'未','戊':'申','己':'未','庚':'巳','辛':'辰','壬':'寅','癸':'丑' };
+const HONGYEOM = { '甲':'午','乙':'午','丙':'寅','丁':'未','戊':'辰','己':'辰','庚':'戌','辛':'酉','壬':'子','癸':'申' };
+const YANGIN   = { '甲':'卯','丙':'午','戊':'午','庚':'酉','壬':'子' };
+const HYEOPROK = {
+  '甲':['丑','卯'],'乙':['寅','辰'],'丙':['辰','午'],'丁':['巳','未'],
+  '戊':['辰','午'],'己':['巳','未'],'庚':['未','酉'],'辛':['申','戌'],
+  '壬':['戌','子'],'癸':['亥','丑']
+};
+const BAEKHO  = ['甲辰','乙未','丙戌','丁丑','戊辰','壬戌','癸丑'];
+const GOEGANG = ['庚辰','庚戌','壬辰','壬戌','戊戌'];
+
+const CHEONMUN_BRANCHES = ['戌','亥','未','酉','卯','申'];
+const HYEONCHIM_CHARS = ['甲','申','卯','辛','午'];
+const GWIMUN_PAIRS = [['子','酉'],['丑','午'],['寅','未'],['卯','申'],['辰','亥'],['巳','戌']];
+
+const BRANCH_PREV = {
+  '寅':'丑','卯':'寅','辰':'卯','巳':'辰','午':'巳','未':'午',
+  '申':'未','酉':'申','戌':'酉','亥':'戌','子':'亥','丑':'子'
+};
+const HWANGEUN = {
+  '寅':'戌','卯':'丑','辰':'寅','巳':'巳','午':'酉','未':'卯',
+  '申':'子','酉':'午','戌':'亥','亥':'辰','子':'申','丑':'未'
+};
+const CHEONSA = { '春':'戊寅', '夏':'甲午', '秋':'戊申', '冬':'甲子' };
+
+function getSamhapBase(b) {
+  if (b==='寅'||b==='午'||b==='戌') return '寅午戌';
+  if (b==='申'||b==='子'||b==='辰') return '申子辰';
+  if (b==='巳'||b==='酉'||b==='丑') return '巳酉丑';
+  if (b==='亥'||b==='卯'||b==='未') return '亥卯未';
+  return null;
+}
+function getBanghapSeason(b) {
+  if (b==='寅'||b==='卯'||b==='辰') return '春';
+  if (b==='巳'||b==='午'||b==='未') return '夏';
+  if (b==='申'||b==='酉'||b==='戌') return '秋';
+  if (b==='亥'||b==='子'||b==='丑') return '冬';
+  return null;
+}
+const YEONGMA = { '寅午戌':'申','申子辰':'寅','巳酉丑':'亥','亥卯未':'巳' };
+const DOHWA   = { '寅午戌':'卯','申子辰':'酉','巳酉丑':'午','亥卯未':'子' };
+const HWAGAE  = { '寅午戌':'戌','申子辰':'辰','巳酉丑':'丑','亥卯未':'未' };
+const GOSIN   = { '春':'巳','夏':'申','秋':'亥','冬':'寅' };
+const GWASUK  = { '春':'丑','夏':'辰','秋':'未','冬':'戌' };
+
+function computeSinsal(p) {
+  const stems = p.stems;
+  const branches = p.branches;
+  const dayStem = p.dayStem;
+  const dayBranch = branches[2];
+  const monthBranch = branches[1];
+  const yearBranch = branches[0];
+  const found = {};
+  const add = (name, idx) => {
+    if (!found[name]) found[name] = new Set();
+    found[name].add(idx);
+  };
+  const addBranchMatch = (name, target) => {
+    if (!target) return;
+    branches.forEach((b, i) => { if (b === target) add(name, i); });
+  };
+  const addBranchMatchList = (name, list) => {
+    if (!list) return;
+    branches.forEach((b, i) => { if (list.indexOf(b) >= 0) add(name, i); });
+  };
+
+  addBranchMatchList('천을귀인', CHEONEUL[dayStem]);
+  addBranchMatchList('태극귀인', TAEGEUK[dayStem]);
+  addBranchMatch('문창귀인', MUNCHANG[dayStem]);
+  addBranchMatch('문곡귀인', MUNGOK[dayStem]);
+  addBranchMatch('학당귀인', HAKDANG[dayStem]);
+  addBranchMatch('관귀학관', GWANGWI[dayStem]);
+  addBranchMatch('천주귀인', CHEONJU[dayStem]);
+  addBranchMatch('금여성', GUMYEO[dayStem]);
+  addBranchMatch('암록', AMROK[dayStem]);
+  addBranchMatch('정록', ROK[dayStem]);
+  addBranchMatch('홍염살', HONGYEOM[dayStem]);
+  if (YANGIN[dayStem]) addBranchMatch('양인살', YANGIN[dayStem]);
+
+  {
+    const t = CHEONDEOK[monthBranch];
+    if (t) {
+      stems.forEach((s, i) => { if (s === t) add('천덕귀인', i); });
+      branches.forEach((b, i) => { if (b === t) add('천덕귀인', i); });
+    }
+  }
+  {
+    const t = WOLDEOK[monthBranch];
+    if (t) stems.forEach((s, i) => { if (s === t) add('월덕귀인', i); });
+  }
+  branches.forEach((b, i) => { if (CHEONMUN_BRANCHES.indexOf(b) >= 0) add('천문성', i); });
+  addBranchMatch('천의성', BRANCH_PREV[monthBranch]);
+  addBranchMatch('황은대사', HWANGEUN[monthBranch]);
+  {
+    const season = getBanghapSeason(monthBranch);
+    if (season && CHEONSA[season] === p.day) add('천사성', 2);
+  }
+  {
+    const pair = HYEOPROK[dayStem];
+    if (pair && branches.indexOf(pair[0]) >= 0 && branches.indexOf(pair[1]) >= 0) {
+      branches.forEach((b, i) => { if (b === pair[0] || b === pair[1]) add('협록', i); });
+    }
+  }
+  {
+    const dayRok = ROK[dayStem];
+    const hasDayRokElsewhere = branches.some((b, i) => i !== 2 && b === dayRok);
+    const dayBranchIsOtherRok = stems.some((s, i) => i !== 2 && ROK[s] === dayBranch);
+    if (hasDayRokElsewhere && dayBranchIsOtherRok) {
+      add('교록', 2);
+      branches.forEach((b, i) => { if (i !== 2 && b === dayRok) add('교록', i); });
+    }
+  }
+  {
+    const tY = new Set(), tD = new Set(), tH = new Set();
+    [yearBranch, dayBranch].forEach(base => {
+      const sh = getSamhapBase(base);
+      if (sh) { tY.add(YEONGMA[sh]); tD.add(DOHWA[sh]); tH.add(HWAGAE[sh]); }
+    });
+    branches.forEach((b, i) => {
+      if (tY.has(b)) add('역마살', i);
+      if (tD.has(b)) add('도화살', i);
+      if (tH.has(b)) add('화개살', i);
+    });
+  }
+  {
+    const tGS = new Set(), tGW = new Set();
+    [yearBranch, dayBranch].forEach(base => {
+      const sn = getBanghapSeason(base);
+      if (sn) { tGS.add(GOSIN[sn]); tGW.add(GWASUK[sn]); }
+    });
+    branches.forEach((b, i) => {
+      if (tGS.has(b)) add('고신살', i);
+      if (tGW.has(b)) add('과숙살', i);
+    });
+  }
+  stems.forEach((s, i)    => { if (HYEONCHIM_CHARS.indexOf(s) >= 0) add('현침살', i); });
+  branches.forEach((b, i) => { if (HYEONCHIM_CHARS.indexOf(b) >= 0) add('현침살', i); });
+  for (let i = 0; i < 4; i++) {
+    for (let j = i + 1; j < 4; j++) {
+      for (const gp of GWIMUN_PAIRS) {
+        if ((gp[0] === branches[i] && gp[1] === branches[j]) ||
+            (gp[1] === branches[i] && gp[0] === branches[j])) {
+          add('귀문관살', i); add('귀문관살', j);
+        }
+      }
+    }
+  }
+  for (let i = 0; i < 4; i++) {
+    const pillar = stems[i] + branches[i];
+    if (GOEGANG.indexOf(pillar) >= 0) add('괴강살', i);
+    if (BAEKHO.indexOf(pillar)  >= 0) add('백호대살', i);
+  }
+
+  const result = {};
+  for (const name of SINSAL_LIST) {
+    if (found[name]) result[name] = [...found[name]].sort((a,b)=>a-b);
+  }
+  return result;
+}
+
+function sinsalCountsFrom(found) {
+  const counts = {};
+  let total = 0;
+  for (const name of SINSAL_LIST) {
+    const c = found[name] ? found[name].length : 0;
+    counts[name] = c;
+    total += c;
+  }
+  return { counts, total };
+}
+
+/* ============================================================
    STATE & FILTERS
    ============================================================ */
 /* Each pillar target has stem+branch condition:
@@ -700,6 +934,8 @@ const state = {
   },
   oheng: {},   /* key: 목/화/토/금/수 → {mode: 'include'|'exclude', min?:number, exact?:number} */
   sipsin: {},
+  sinsal: {},  /* 각 신살 이름 → {mode, n} */
+  sinsalTotal: { mode: 'off', n: 1 }, /* 전체 신살 개수 필터 */
   results: [],
   totalSearched: 0,
   currentView: 'table',
@@ -752,6 +988,29 @@ function passesCountFilter(counts) {
   return true;
 }
 
+function passesSinsalFilter(sinsalRes) {
+  const { counts, total } = sinsalCountsFrom(sinsalRes);
+  /* 개별 신살 조건 */
+  for (const name of SINSAL_LIST) {
+    const f = state.sinsal[name];
+    if (!f || f.mode === 'off') continue;
+    const val = counts[name];
+    if (f.mode === 'include' && val < 1) return false;
+    if (f.mode === 'exclude' && val !== 0) return false;
+    if (f.mode === 'min' && val < f.n) return false;
+    if (f.mode === 'exact' && val !== f.n) return false;
+  }
+  /* 전체 신살 개수 조건 */
+  const t = state.sinsalTotal;
+  if (t && t.mode && t.mode !== 'off') {
+    if (t.mode === 'include' && total < 1) return false;
+    if (t.mode === 'exclude' && total !== 0) return false;
+    if (t.mode === 'min' && total < t.n) return false;
+    if (t.mode === 'exact' && total !== t.n) return false;
+  }
+  return true;
+}
+
 async function runSearch() {
   const startStr = document.getElementById('start-date').value;
   const endStr   = document.getElementById('end-date').value;
@@ -795,11 +1054,17 @@ async function runSearch() {
         searched++;
         if (!passesPillarCondition(p)) continue;
         if (!passesCountFilter(counts)) continue;
+        const sinsalRes = computeSinsal(p);
+        if (!passesSinsalFilter(sinsalRes)) continue;
+        const sinsalSummary = sinsalCountsFrom(sinsalRes);
         results.push({
           y: yy, m: mm, d: ddd, h: hOdd,
           year_pillar: p.year, month_pillar: p.month,
           day_pillar: p.day, hour_pillar: p.hour,
           oheng: counts.oheng, sipsin: counts.sipsin,
+          sinsal: sinsalRes,
+          sinsalCounts: sinsalSummary.counts,
+          sinsalTotal: sinsalSummary.total,
         });
         if (results.length >= maxRows) break;
       }
@@ -833,7 +1098,7 @@ const PILLAR_LABELS = { year: '연주 (年柱)', month: '월주 (月柱)', day: 
 function buildPillars() {
   const container = document.getElementById('pillars-block');
   container.innerHTML = '';
-  for (const key of ['year','month','day','hour']) {
+  for (const key of ['hour','day','month','year']) {
     const card = document.createElement('div');
     card.className = 'pillar-card';
     const stemSel = `<select data-pillar="${key}" data-part="stem">
@@ -944,6 +1209,71 @@ function buildSipsinGrid() {
   SIPSIN.forEach(sp => wrap.appendChild(buildCountRow(sp, 'sipsin', true)));
 }
 
+function buildSinsalTotalRow() {
+  const wrap = document.getElementById('sinsal-total-grid');
+  wrap.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'count-row';
+  row.innerHTML = `
+    <div class="count-label sp-label" data-el="합계" style="font-size: 11px;">합계</div>
+    <select class="count-mode" data-key="__total__">
+      <option value="off">무관</option>
+      <option value="include">포함 (≥1)</option>
+      <option value="exclude">제외 (=0)</option>
+      <option value="min">≥ N 개 이상</option>
+      <option value="exact">= N 개 정확</option>
+    </select>
+    <input type="number" class="count-value" data-key="__total__" min="0" max="60" value="5" disabled>`;
+  const modeSel = row.querySelector('.count-mode');
+  const numInput = row.querySelector('.count-value');
+  const labelEl = row.querySelector('.count-label');
+  const sync = () => {
+    const mode = modeSel.value;
+    const needsNum = (mode === 'min' || mode === 'exact');
+    numInput.disabled = !needsNum;
+    const n = parseInt(numInput.value, 10);
+    state.sinsalTotal = { mode, n: isNaN(n) ? 1 : n };
+    labelEl.classList.toggle('active', mode !== 'off');
+  };
+  modeSel.addEventListener('change', sync);
+  numInput.addEventListener('input', sync);
+  wrap.appendChild(row);
+}
+
+function buildSinsalGrid() {
+  const wrap = document.getElementById('sinsal-grid');
+  wrap.innerHTML = '';
+  SINSAL_LIST.forEach(name => {
+    const row = document.createElement('div');
+    row.className = 'count-row';
+    row.innerHTML = `
+      <div class="count-label sp-label" data-el="${name}" style="font-size: 10px; padding: 5px 2px;">${name}</div>
+      <select class="count-mode" data-key="${name}">
+        <option value="off">무관</option>
+        <option value="include">포함 (≥1)</option>
+        <option value="exclude">제외 (=0)</option>
+        <option value="min">≥ N</option>
+        <option value="exact">= N</option>
+      </select>
+      <input type="number" class="count-value" data-key="${name}" min="0" max="8" value="1" disabled>`;
+    const modeSel = row.querySelector('.count-mode');
+    const numInput = row.querySelector('.count-value');
+    const labelEl = row.querySelector('.count-label');
+    const sync = () => {
+      const mode = modeSel.value;
+      const needsNum = (mode === 'min' || mode === 'exact');
+      numInput.disabled = !needsNum;
+      const n = parseInt(numInput.value, 10);
+      if (mode === 'off') delete state.sinsal[name];
+      else state.sinsal[name] = { mode, n: isNaN(n) ? 1 : n };
+      labelEl.classList.toggle('active', mode !== 'off');
+    };
+    modeSel.addEventListener('change', sync);
+    numInput.addEventListener('input', sync);
+    wrap.appendChild(row);
+  });
+}
+
 function refreshCountGrids() {
   /* Reset all count-mode selects + inputs to match state. */
   document.querySelectorAll('#oheng-grid .count-row').forEach(row => {
@@ -967,6 +1297,27 @@ function refreshCountGrids() {
     numInput.value = f && f.n != null ? f.n : 1;
     numInput.disabled = !(f && (f.mode === 'min' || f.mode === 'exact'));
     labelEl.classList.toggle('active', !!f && f.mode !== 'off');
+  });
+  document.querySelectorAll('#sinsal-grid .count-row').forEach(row => {
+    const key = row.querySelector('.count-mode').dataset.key;
+    const modeSel = row.querySelector('.count-mode');
+    const numInput = row.querySelector('.count-value');
+    const labelEl = row.querySelector('.count-label');
+    const f = state.sinsal[key];
+    modeSel.value = f ? f.mode : 'off';
+    numInput.value = f && f.n != null ? f.n : 1;
+    numInput.disabled = !(f && (f.mode === 'min' || f.mode === 'exact'));
+    labelEl.classList.toggle('active', !!f && f.mode !== 'off');
+  });
+  document.querySelectorAll('#sinsal-total-grid .count-row').forEach(row => {
+    const modeSel = row.querySelector('.count-mode');
+    const numInput = row.querySelector('.count-value');
+    const labelEl = row.querySelector('.count-label');
+    const f = state.sinsalTotal;
+    modeSel.value = (f && f.mode) ? f.mode : 'off';
+    numInput.value = (f && f.n != null) ? f.n : 5;
+    numInput.disabled = !(f && (f.mode === 'min' || f.mode === 'exact'));
+    labelEl.classList.toggle('active', !!f && f.mode && f.mode !== 'off');
   });
 }
 
@@ -1009,15 +1360,17 @@ function renderTable(body) {
 
   const cols = [
     { key:'datetime', label:'일시' },
-    { key:'year_pillar', label:'연주' },
-    { key:'month_pillar', label:'월주' },
-    { key:'day_pillar', label:'일주' },
     { key:'hour_pillar', label:'시주' },
+    { key:'day_pillar', label:'일주' },
+    { key:'month_pillar', label:'월주' },
+    { key:'year_pillar', label:'연주' },
     { key:'oh_mok', label:'목' },
     { key:'oh_hwa', label:'화' },
     { key:'oh_to', label:'토' },
     { key:'oh_geum', label:'금' },
     { key:'oh_su', label:'수' },
+    { key:'sinsal_total', label:'신살' },
+    { key:'sinsal_list', label:'신살 목록' },
   ];
 
   const pager = renderPager(numPages, state.page);
@@ -1031,15 +1384,17 @@ function renderTable(body) {
         <tbody>${pageRows.map(r => `
           <tr>
             <td>${fmtDateTime(r)}</td>
-            <td class="pillar-cell">${r.year_pillar}</td>
-            <td class="pillar-cell">${r.month_pillar}</td>
-            <td class="pillar-cell">${r.day_pillar}</td>
             <td class="pillar-cell">${r.hour_pillar}</td>
+            <td class="pillar-cell">${r.day_pillar}</td>
+            <td class="pillar-cell">${r.month_pillar}</td>
+            <td class="pillar-cell">${r.year_pillar}</td>
             <td>${r.oheng[0]}</td>
             <td>${r.oheng[1]}</td>
             <td>${r.oheng[2]}</td>
             <td>${r.oheng[3]}</td>
             <td>${r.oheng[4]}</td>
+            <td><strong>${r.sinsalTotal}</strong></td>
+            <td style="white-space: normal; max-width: 360px; font-size: 11px;">${sinsalSummaryHTML(r.sinsal)}</td>
           </tr>
         `).join('')}</tbody>
       </table>
@@ -1065,8 +1420,20 @@ function tableVal(r, k) {
     case 'oh_to': return r.oheng[2];
     case 'oh_geum': return r.oheng[3];
     case 'oh_su': return r.oheng[4];
+    case 'sinsal_total': return r.sinsalTotal;
+    case 'sinsal_list': return Object.keys(r.sinsal || {}).join(',');
     default: return r[k];
   }
+}
+
+function sinsalSummaryHTML(sinsalRes) {
+  if (!sinsalRes) return '';
+  const names = Object.keys(sinsalRes);
+  if (!names.length) return '<span style="color:var(--text-muted)">—</span>';
+  return names.map(n => {
+    const positions = sinsalRes[n].map(i => POS_LABEL[i]).join('');
+    return `<span class="meta-badge" style="margin:1px 2px;"><strong>${n}</strong>·${positions}</span>`;
+  }).join(' ');
 }
 
 function renderPager(numPages, page) {
@@ -1113,10 +1480,10 @@ function renderCards(body) {
 
 function cardHTML(r) {
   const pillars = [
-    { label: '연주', val: r.year_pillar },
-    { label: '월주', val: r.month_pillar },
-    { label: '일주', val: r.day_pillar },
     { label: '시주', val: r.hour_pillar },
+    { label: '일주', val: r.day_pillar },
+    { label: '월주', val: r.month_pillar },
+    { label: '연주', val: r.year_pillar },
   ];
   const domEl = OHENG[r.oheng.indexOf(Math.max(...r.oheng))];
   const stemElMap = { 甲:'mok',乙:'mok',丙:'hwa',丁:'hwa',戊:'to',己:'to',庚:'geum',辛:'geum',壬:'su',癸:'su' };
@@ -1141,7 +1508,13 @@ function cardHTML(r) {
     </div>
     <div class="card-meta">
       ${OHENG.map((e, i) => r.oheng[i] > 0 ? `<span class="meta-badge">${e} <strong>${r.oheng[i]}</strong></span>` : '').join('')}
+      <span class="meta-badge" style="background:#fef3c7; color:#92400e;">신살 <strong>${r.sinsalTotal}</strong></span>
     </div>
+    ${Object.keys(r.sinsal || {}).length ? `
+      <div class="card-meta" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);">
+        ${sinsalSummaryHTML(r.sinsal)}
+      </div>
+    ` : ''}
   </div>`;
 }
 
@@ -1195,10 +1568,15 @@ function calMonthHTML(y, m, rows) {
 function renderCharts(body) {
   const ohTotals = [0,0,0,0,0];
   const spTotals = [0,0,0,0,0,0,0,0,0,0];
+  const ssTotals = {};
+  SINSAL_LIST.forEach(n => ssTotals[n] = 0);
   const pillarStemYear = {}, pillarBranchYear = {};
   for (const r of state.results) {
     for (let i = 0; i < 5; i++) ohTotals[i] += r.oheng[i];
     for (let i = 0; i < 10; i++) spTotals[i] += r.sipsin[i];
+    if (r.sinsalCounts) {
+      for (const n of SINSAL_LIST) ssTotals[n] += (r.sinsalCounts[n] || 0);
+    }
     const ys = r.year_pillar[0], yb = r.year_pillar[1];
     pillarStemYear[ys] = (pillarStemYear[ys] || 0) + 1;
     pillarBranchYear[yb] = (pillarBranchYear[yb] || 0) + 1;
@@ -1212,6 +1590,10 @@ function renderCharts(body) {
       <div class="chart-card">
         <h3>십신 분포</h3>
         ${barList(SIPSIN, spTotals, false)}
+      </div>
+      <div class="chart-card" style="grid-column: 1 / -1;">
+        <h3>신살 분포 (누적 개수)</h3>
+        ${barList(SINSAL_LIST, SINSAL_LIST.map(n => ssTotals[n] || 0), false)}
       </div>
       <div class="chart-card">
         <h3>연주 천간별 건수</h3>
@@ -1247,13 +1629,19 @@ function fmtDateTime(r) {
    ============================================================ */
 function exportCSV() {
   if (!state.results.length) { alert('내보낼 결과가 없어요.'); return; }
-  const header = ['일시','연주','월주','일주','시주',...OHENG,...SIPSIN];
+  const header = ['일시','시주','일주','월주','연주',...OHENG,...SIPSIN,'신살합계',...SINSAL_LIST,'신살상세'];
   const rows = [header.join(',')];
   for (const r of state.results) {
+    const detail = Object.keys(r.sinsal || {})
+      .map(n => `${n}(${(r.sinsal[n]||[]).map(i => POS_LABEL[i]).join('')})`)
+      .join(' | ');
     rows.push([
       fmtDateTime(r),
-      r.year_pillar, r.month_pillar, r.day_pillar, r.hour_pillar,
+      r.hour_pillar, r.day_pillar, r.month_pillar, r.year_pillar,
       ...r.oheng, ...r.sipsin,
+      r.sinsalTotal || 0,
+      ...SINSAL_LIST.map(n => (r.sinsalCounts && r.sinsalCounts[n]) || 0),
+      `"${detail}"`,
     ].join(','));
   }
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1271,6 +1659,8 @@ function resetAll() {
   }
   state.oheng = {};
   state.sipsin = {};
+  state.sinsal = {};
+  state.sinsalTotal = { mode: 'off', n: 1 };
   state.results = [];
   state.totalSearched = 0;
   state.page = 1;
@@ -1288,6 +1678,8 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPillars();
   buildOhengGrid();
   buildSipsinGrid();
+  buildSinsalTotalRow();
+  buildSinsalGrid();
 
   document.querySelectorAll('.toggle-header').forEach(h => {
     h.addEventListener('click', () => {
@@ -1317,6 +1709,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const which = b.dataset.reset;
       if (which === 'oheng') { state.oheng = {}; refreshCountGrids(); }
       if (which === 'sipsin') { state.sipsin = {}; refreshCountGrids(); }
+      if (which === 'sinsal') {
+        state.sinsal = {};
+        state.sinsalTotal = { mode: 'off', n: 1 };
+        refreshCountGrids();
+      }
     });
   });
 });
